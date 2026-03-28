@@ -1,37 +1,37 @@
 const nodemailer = require('nodemailer');
 
-// Create reusable transporter object using Gmail SMTP
+// Create reusable transporter object using Gmail SMTP with timeouts
 const createTransporter = () => {
   if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) {
     throw new Error('Gmail credentials not configured. Please set GMAIL_USER and GMAIL_APP_PASSWORD in .env file');
   }
-  
+
   return nodemailer.createTransport({
     service: 'gmail',
     auth: {
-      user: process.env.GMAIL_USER, // Your Gmail address
-      pass: process.env.GMAIL_APP_PASSWORD // Gmail App Password (not regular password)
-    }
+      user: process.env.GMAIL_USER,
+      pass: process.env.GMAIL_APP_PASSWORD
+    },
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 15000
   });
 };
 
 // Send verification email
 const sendVerificationEmail = async (email, firstName, verificationCode) => {
   try {
-    // Validate inputs
     if (!email || !verificationCode) {
       throw new Error('Email and verification code are required');
     }
-    
-    // Ensure verificationCode is a string
+
     const code = String(verificationCode);
     const name = firstName || 'User';
-    
+
     console.log(`Sending verification email to ${email} with code: ${code}`);
-    
+
     const transporter = createTransporter();
-    
-    // Create HTML content with the verification code
+
     const htmlContent = `
       <!DOCTYPE html>
       <html>
@@ -64,22 +64,21 @@ const sendVerificationEmail = async (email, firstName, verificationCode) => {
       </body>
       </html>
     `;
-    
-    // Plain text version
+
     const textContent = `
       Hello ${name}!
-      
+
       Thank you for signing up for Student Housing. Please verify your email address by entering the verification code below:
-      
+
       Verification Code: ${code}
-      
+
       This code will expire in 10 minutes.
-      
+
       If you didn't create an account with us, please ignore this email.
-      
+
       © ${new Date().getFullYear()} Student Housing. All rights reserved.
     `;
-    
+
     const mailOptions = {
       from: `"Student Housing" <${process.env.GMAIL_USER}>`,
       to: email,
@@ -90,18 +89,9 @@ const sendVerificationEmail = async (email, firstName, verificationCode) => {
 
     const info = await transporter.sendMail(mailOptions);
     console.log('Verification email sent successfully:', info.messageId);
-    console.log('Email sent to:', email);
-    console.log('Verification code:', code);
     return { success: true, messageId: info.messageId };
   } catch (error) {
-    console.error('Error sending verification email:', error);
-    console.error('Error details:', {
-      email,
-      firstName,
-      verificationCode,
-      errorMessage: error.message,
-      errorStack: error.stack
-    });
+    console.error('Error sending verification email:', error.message);
     throw error;
   }
 };
@@ -110,7 +100,7 @@ const sendVerificationEmail = async (email, firstName, verificationCode) => {
 const sendPasswordResetEmail = async (email, firstName, resetCode) => {
   try {
     const transporter = createTransporter();
-    
+
     const mailOptions = {
       from: `"Student Housing" <${process.env.GMAIL_USER}>`,
       to: email,
@@ -140,7 +130,7 @@ const sendPasswordResetEmail = async (email, firstName, resetCode) => {
               <p>Use the code below to reset your password:</p>
               <div class="code">${resetCode}</div>
               <div class="warning">
-                <strong>⚠️ Security Notice:</strong> This code will expire in 10 minutes. If you didn't request this, please ignore this email and your password will remain unchanged.
+                <strong>Security Notice:</strong> This code will expire in 10 minutes. If you didn't request this, please ignore this email.
               </div>
             </div>
             <div class="footer">
@@ -156,7 +146,7 @@ const sendPasswordResetEmail = async (email, firstName, resetCode) => {
     console.log('Password reset email sent:', info.messageId);
     return { success: true, messageId: info.messageId };
   } catch (error) {
-    console.error('Error sending password reset email:', error);
+    console.error('Error sending password reset email:', error.message);
     throw error;
   }
 };
@@ -165,4 +155,3 @@ module.exports = {
   sendVerificationEmail,
   sendPasswordResetEmail
 };
-

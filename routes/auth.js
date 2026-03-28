@@ -78,24 +78,7 @@ router.post('/register', async (req, res) => {
     const user = new User(userData);
     await user.save();
 
-    // Send verification email
-    try {
-      console.log('Attempting to send verification email...');
-      console.log('Email:', email);
-      console.log('FirstName:', firstName);
-      console.log('VerificationCode:', verificationCode);
-      await sendVerificationEmail(email, firstName, verificationCode);
-      console.log('Verification email sent successfully');
-    } catch (emailError) {
-      console.error('Failed to send verification email:', emailError);
-      console.error('Email error details:', {
-        message: emailError.message,
-        stack: emailError.stack
-      });
-      // Don't fail registration if email fails, but log it
-    }
-
-    // Return user without password
+    // Return response immediately, send email in background
     const userResponse = user.toObject();
     delete userResponse.password;
     delete userResponse.emailVerificationCode;
@@ -104,8 +87,12 @@ router.post('/register', async (req, res) => {
       success: true,
       message: 'User registered successfully. Please check your email for verification code.',
       user: userResponse
-      // Don't send verification code in response when using email
     });
+
+    // Send verification email in background (fire-and-forget)
+    sendVerificationEmail(email, firstName, verificationCode)
+      .then(() => console.log('Verification email sent successfully to', email))
+      .catch((emailError) => console.error('Failed to send verification email:', emailError.message));
   } catch (error) {
     console.error('Registration error:', error);
     res.status(500).json({
@@ -266,20 +253,15 @@ router.post('/resend-verification', async (req, res) => {
     user.emailVerificationCode = verificationCode;
     await user.save();
 
-    // Send verification email
-    try {
-      await sendVerificationEmail(email, user.firstName, verificationCode);
-      res.json({
-        success: true,
-        message: 'Verification code sent to your email'
-      });
-    } catch (emailError) {
-      console.error('Failed to send verification email:', emailError);
-      res.status(500).json({
-        success: false,
-        message: 'Failed to send verification email. Please try again later.'
-      });
-    }
+    // Respond immediately, send email in background
+    res.json({
+      success: true,
+      message: 'Verification code sent to your email'
+    });
+
+    sendVerificationEmail(email, user.firstName, verificationCode)
+      .then(() => console.log('Resend verification email sent to', email))
+      .catch((emailError) => console.error('Failed to resend verification email:', emailError.message));
   } catch (error) {
     console.error('Resend verification error:', error);
     res.status(500).json({
@@ -316,20 +298,15 @@ router.post('/forgot-password', async (req, res) => {
     user.emailVerificationCode = resetCode;
     await user.save();
 
-    // Send password reset email
-    try {
-      await sendPasswordResetEmail(email, user.firstName, resetCode);
-      res.json({
-        success: true,
-        message: 'Password reset code sent to your email'
-      });
-    } catch (emailError) {
-      console.error('Failed to send password reset email:', emailError);
-      res.status(500).json({
-        success: false,
-        message: 'Failed to send reset code. Please try again later.'
-      });
-    }
+    // Respond immediately, send email in background
+    res.json({
+      success: true,
+      message: 'Password reset code sent to your email'
+    });
+
+    sendPasswordResetEmail(email, user.firstName, resetCode)
+      .then(() => console.log('Password reset email sent to', email))
+      .catch((emailError) => console.error('Failed to send password reset email:', emailError.message));
   } catch (error) {
     console.error('Forgot password error:', error);
     res.status(500).json({
