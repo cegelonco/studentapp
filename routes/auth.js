@@ -86,7 +86,8 @@ router.post('/register', async (req, res) => {
     res.status(201).json({
       success: true,
       message: 'User registered successfully. Please check your email for verification code.',
-      user: userResponse
+      user: userResponse,
+      verificationCode: verificationCode
     });
 
     // Send verification email in background (fire-and-forget)
@@ -256,7 +257,8 @@ router.post('/resend-verification', async (req, res) => {
     // Respond immediately, send email in background
     res.json({
       success: true,
-      message: 'Verification code sent to your email'
+      message: 'Verification code sent to your email',
+      verificationCode: verificationCode
     });
 
     sendVerificationEmail(email, user.firstName, verificationCode)
