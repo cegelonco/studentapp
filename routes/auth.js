@@ -78,10 +78,12 @@ router.post('/register', async (req, res) => {
     const user = new User(userData);
     await user.save();
 
-    // Send verification email via Resend (HTTPS, fast)
+    // Try sending email via Resend
+    let emailSent = false;
     try {
       await sendVerificationEmail(email, firstName, verificationCode);
       console.log('Verification email sent to', email);
+      emailSent = true;
     } catch (emailError) {
       console.error('Failed to send verification email:', emailError.message);
     }
@@ -90,11 +92,20 @@ router.post('/register', async (req, res) => {
     delete userResponse.password;
     delete userResponse.emailVerificationCode;
 
-    res.status(201).json({
+    const response = {
       success: true,
-      message: 'User registered successfully. Please check your email for verification code.',
+      message: emailSent
+        ? 'User registered successfully. Please check your email for verification code.'
+        : 'User registered successfully. Verification code provided below.',
       user: userResponse
-    });
+    };
+
+    // Include code in response if email failed (fallback)
+    if (!emailSent) {
+      response.verificationCode = verificationCode;
+    }
+
+    res.status(201).json(response);
   } catch (error) {
     console.error('Registration error:', error);
     res.status(500).json({
@@ -255,18 +266,26 @@ router.post('/resend-verification', async (req, res) => {
     user.emailVerificationCode = verificationCode;
     await user.save();
 
-    // Send email via Resend (HTTPS, fast)
+    // Try sending email via Resend
+    let emailSent = false;
     try {
       await sendVerificationEmail(email, user.firstName, verificationCode);
       console.log('Resend verification email sent to', email);
+      emailSent = true;
     } catch (emailError) {
       console.error('Failed to resend verification email:', emailError.message);
     }
 
-    res.json({
+    const response = {
       success: true,
-      message: 'Verification code sent to your email'
-    });
+      message: emailSent
+        ? 'Verification code sent to your email'
+        : 'Verification code provided below'
+    };
+    if (!emailSent) {
+      response.verificationCode = verificationCode;
+    }
+    res.json(response);
   } catch (error) {
     console.error('Resend verification error:', error);
     res.status(500).json({
