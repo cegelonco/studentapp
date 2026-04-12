@@ -253,6 +253,40 @@ router.put('/connection/:connectionId', authenticate, isStudent, async (req, res
   }
 });
 
+// Get incoming pending requests
+router.get('/requests', authenticate, isStudent, async (req, res) => {
+  try {
+    // Find all roommate profiles that have a pending connection to the current user
+    const incoming = await Roommate.find({
+      'connections.user': req.user._id,
+      'connections.status': 'pending'
+    }).populate('student', 'firstName lastName email university department age');
+
+    const requests = incoming.map(r => {
+      const conn = r.connections.find(
+        c => c.user.toString() === req.user._id.toString() && c.status === 'pending'
+      );
+      return {
+        connectionId: conn?._id,
+        fromStudent: r.student,
+        status: conn?.status,
+        createdAt: conn?.createdAt
+      };
+    }).filter(r => r.connectionId);
+
+    res.json({
+      success: true,
+      requests: requests
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching requests',
+      error: error.message
+    });
+  }
+});
+
 // Get connected roommates
 router.get('/connections', authenticate, isStudent, async (req, res) => {
   try {
