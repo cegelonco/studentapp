@@ -102,10 +102,12 @@ router.get('/potential', authenticate, isStudent, async (req, res) => {
     .populate('student', 'firstName lastName email university department age')
     .limit(20);
 
-    // Filter out already connected roommates
-    const connectedIds = currentRoommate?.connections.map(c => c.user.toString()) || [];
-    const filtered = potentialRoommates.filter(r => 
-      !connectedIds.includes(r.student._id.toString())
+    // Filter out already connected roommates and invalid entries
+    const connectedIds = currentRoommate?.connections
+      .filter(c => c.user != null)
+      .map(c => c.user.toString()) || [];
+    const filtered = potentialRoommates.filter(r =>
+      r.student != null && !connectedIds.includes(r.student._id.toString())
     );
 
     res.json({
