@@ -196,37 +196,53 @@ router.put('/connection/:connectionId', authenticate, isStudent, async (req, res
       });
     }
 
-    const roommate = await Roommate.findOne({
-      'connections._id': connectionId,
-      student: req.user._id
+    // Find the roommate profile that contains this connection
+    // (the connection lives on the SENDER's profile, not the receiver's)
+    const senderRoommate = await Roommate.findOne({
+      'connections._id': connectionId
     });
 
-    if (!roommate) {
+    if (!senderRoommate) {
       return res.status(404).json({
         success: false,
         message: 'Connection not found'
       });
     }
 
-    const connection = roommate.connections.id(connectionId);
+    const connection = senderRoommate.connections.id(connectionId);
+
+    // Verify the current user is the TARGET of this connection
+    if (connection.user.toString() !== req.user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'You are not authorized to respond to this request'
+      });
+    }
+
     if (action === 'accept') {
       connection.status = 'accepted';
-      
-      // Also update the other roommate's connection
-      const otherRoommate = await Roommate.findOne({ student: connection.user });
-      if (otherRoommate) {
-        const otherConnection = otherRoommate.connections.find(
-          c => c.user.toString() === req.user._id.toString()
-        );
-        if (otherConnection) {
-          otherConnection.status = 'accepted';
-          await otherRoommate.save();
-        }
-      }
 
-      // Create notification
+      // Also create a reverse connection on the receiver's profile
+      let receiverRoommate = await Roommate.findOne({ student: req.user._id });
+      if (!receiverRoommate) {
+        receiverRoommate = new Roommate({ student: req.user._id, isLookingForRoommate: true });
+      }
+      const existingReverse = receiverRoommate.connections.find(
+        c => c.user.toString() === senderRoommate.student.toString()
+      );
+      if (existingReverse) {
+        existingReverse.status = 'accepted';
+      } else {
+        receiverRoommate.connections.push({
+          user: senderRoommate.student,
+          status: 'accepted'
+        });
+      }
+      await receiverRoommate.save();
+
+      // Create notification for the sender
       await Notification.create({
-        user: connection.user,
+        user: senderRoommate.student,
         type: 'roommate',
         title: 'Roommate Connection Accepted',
         message: `${req.user.firstName} ${req.user.lastName} accepted your roommate connection request`,
@@ -238,7 +254,7 @@ router.put('/connection/:connectionId', authenticate, isStudent, async (req, res
       connection.status = 'rejected';
     }
 
-    await roommate.save();
+    await senderRoommate.save();
 
     res.json({
       success: true,
