@@ -12,14 +12,15 @@ router.get('/profile', authenticate, isStudent, async (req, res) => {
 
     if (!roommate) {
       // Create roommate profile from user data
-      roommate = new Roommate({
+      const data = {
         student: req.user._id,
-        age: req.user.age,
-        university: req.user.university,
-        department: req.user.department,
-        budget: req.user.budget,
+        university: req.user.university || null,
+        department: req.user.department || null,
         isLookingForRoommate: true
-      });
+      };
+      if (req.user.age) data.age = req.user.age;
+      if (req.user.budget && req.user.budget.min != null) data.budget = req.user.budget;
+      roommate = new Roommate(data);
       await roommate.save();
     }
 
