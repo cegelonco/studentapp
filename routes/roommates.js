@@ -25,8 +25,8 @@ router.get('/profile', authenticate, isStudent, async (req, res) => {
     }
 
     const populatedRoommate = await Roommate.findById(roommate._id)
-      .populate('student', 'firstName lastName email university department age')
-      .populate('connections.user', 'firstName lastName email university department age');
+      .populate('student', 'firstName lastName email userType university department age phone phoneCode')
+      .populate('connections.user', 'firstName lastName email userType university department age phone phoneCode');
 
     res.json({
       success: true,
@@ -72,8 +72,8 @@ router.put('/profile', authenticate, isStudent, async (req, res) => {
     }
 
     const populatedRoommate = await Roommate.findById(roommate._id)
-      .populate('student', 'firstName lastName email university department age')
-      .populate('connections.user', 'firstName lastName email university department age');
+      .populate('student', 'firstName lastName email userType university department age phone phoneCode')
+      .populate('connections.user', 'firstName lastName email userType university department age phone phoneCode');
 
     res.json({
       success: true,
@@ -113,7 +113,7 @@ router.get('/potential', authenticate, isStudent, async (req, res) => {
       _id: { $ne: req.user._id },
       userType: 'student',
       university: currentUniversity
-    }).select('_id firstName lastName email university department age budget');
+    }).select('_id firstName lastName email userType university department age phone phoneCode budget');
 
     if (sameUniStudents.length === 0) {
       return res.json({ success: true, roommates: [] });
@@ -153,7 +153,7 @@ router.get('/potential', authenticate, isStudent, async (req, res) => {
       student: { $in: studentIds },
       isLookingForRoommate: true
     })
-      .populate('student', 'firstName lastName email university department age userType')
+      .populate('student', 'firstName lastName email userType university department age phone phoneCode')
       .limit(100);
 
     // Exclude students the current user already has a pending/accepted
@@ -346,7 +346,7 @@ router.get('/requests', authenticate, isStudent, async (req, res) => {
     const incoming = await Roommate.find({
       'connections.user': req.user._id,
       'connections.status': 'pending'
-    }).populate('student', 'firstName lastName email userType university department age');
+    }).populate('student', 'firstName lastName email userType university department age phone phoneCode');
 
     const requests = incoming.map(r => {
       const conn = r.connections.find(
@@ -398,7 +398,7 @@ router.get('/connections', authenticate, isStudent, async (req, res) => {
     // profile and return that full shape so names/universities render.
     const userIds = acceptedConnections.map(c => c.user);
     const connectedRoommates = await Roommate.find({ student: { $in: userIds } })
-      .populate('student', 'firstName lastName email userType university department age');
+      .populate('student', 'firstName lastName email userType university department age phone phoneCode');
 
     const byStudentId = new Map(
       connectedRoommates
