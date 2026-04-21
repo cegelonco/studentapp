@@ -105,6 +105,20 @@ router.get('/potential', authenticate, isStudent, async (req, res) => {
 
     const currentRoommate = await Roommate.findOne({ student: req.user._id });
 
+    // One-time cleanup: remove any duplicate Roommate documents that share
+    // the same student (bug from before the unique index existed).
+    const duplicateGroups = await Roommate.aggregate([
+      { $group: { _id: '$student', ids: { $push: '$_id' }, count: { $sum: 1 } } },
+      { $match: { count: { $gt: 1 } } }
+    ]);
+    for (const group of duplicateGroups) {
+      // Keep the first document, delete the rest
+      const [, ...toDelete] = group.ids;
+      if (toDelete.length > 0) {
+        await Roommate.deleteMany({ _id: { $in: toDelete } });
+      }
+    }
+
     // Find all OTHER students from the SAME university.
     // We query Users directly so that students who haven't yet opened the
     // roommates tab (and therefore don't have a Roommate document) still
@@ -178,9 +192,21 @@ router.get('/potential', authenticate, isStudent, async (req, res) => {
       r.student != null && !excludeIds.has(r.student._id.toString())
     );
 
+    // Final safety net: deduplicate by student._id in case any duplicates
+    // exist in the DB that the cleanup missed.
+    const seenStudentIds = new Set();
+    const deduped = [];
+    for (const r of filtered) {
+      const sid = r.student._id.toString();
+      if (!seenStudentIds.has(sid)) {
+        seenStudentIds.add(sid);
+        deduped.push(r);
+      }
+    }
+
     res.json({
       success: true,
-      roommates: filtered
+      roommates: deduped
     });
   } catch (error) {
     res.status(500).json({

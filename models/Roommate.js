@@ -4,7 +4,9 @@ const roommateSchema = new mongoose.Schema({
   student: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: true
+    required: true,
+    unique: true,
+    index: true
   },
   age: {
     type: Number,
