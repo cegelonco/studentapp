@@ -89,23 +89,79 @@ router.put('/profile', authenticate, isStudent, async (req, res) => {
   }
 });
 
-// Get potential roommates
+// Get potential roommates (same university only)
 router.get('/potential', authenticate, isStudent, async (req, res) => {
   try {
+    const currentUniversity = req.user.university;
+
+    // If current user has not set their university, we cannot match them
+    if (!currentUniversity) {
+      return res.json({
+        success: true,
+        roommates: [],
+        message: 'Please set your university in your profile to discover roommates'
+      });
+    }
+
     const currentRoommate = await Roommate.findOne({ student: req.user._id });
-    
-    // Get all other students looking for roommates
+
+    // Find all OTHER students from the SAME university.
+    // We query Users directly so that students who haven't yet opened the
+    // roommates tab (and therefore don't have a Roommate document) still
+    // appear to their peers.
+    const sameUniStudents = await User.find({
+      _id: { $ne: req.user._id },
+      userType: 'student',
+      university: currentUniversity
+    }).select('_id firstName lastName email university department age budget');
+
+    if (sameUniStudents.length === 0) {
+      return res.json({ success: true, roommates: [] });
+    }
+
+    const studentIds = sameUniStudents.map(u => u._id);
+
+    // Auto-provision a Roommate profile for any same-university student
+    // that doesn't have one yet, so they become discoverable.
+    const existingRoommates = await Roommate.find({ student: { $in: studentIds } });
+    const existingStudentIds = new Set(existingRoommates.map(r => r.student.toString()));
+
+    const toCreate = sameUniStudents
+      .filter(u => !existingStudentIds.has(u._id.toString()))
+      .map(u => {
+        const doc = {
+          student: u._id,
+          university: u.university || null,
+          department: u.department || null,
+          isLookingForRoommate: true
+        };
+        if (u.age != null) doc.age = u.age;
+        if (u.budget && u.budget.min != null) doc.budget = u.budget;
+        return doc;
+      });
+
+    if (toCreate.length > 0) {
+      try {
+        await Roommate.insertMany(toCreate, { ordered: false });
+      } catch (e) {
+        // Ignore duplicate-key or partial-insert errors; we'll re-query below.
+      }
+    }
+
+    // Fetch the full list of discoverable roommates from the same university.
     const potentialRoommates = await Roommate.find({
-      student: { $ne: req.user._id },
+      student: { $in: studentIds },
       isLookingForRoommate: true
     })
-    .populate('student', 'firstName lastName email university department age')
-    .limit(20);
+      .populate('student', 'firstName lastName email university department age userType')
+      .limit(100);
 
-    // Filter out already connected roommates and invalid entries
-    const connectedIds = currentRoommate?.connections
-      .filter(c => c.user != null)
-      .map(c => c.user.toString()) || [];
+    // Exclude students the current user already has a pending/accepted
+    // connection with, plus any orphaned docs whose student was deleted.
+    const connectedIds = (currentRoommate?.connections || [])
+      .filter(c => c.user != null && c.status !== 'rejected')
+      .map(c => c.user.toString());
+
     const filtered = potentialRoommates.filter(r =>
       r.student != null && !connectedIds.includes(r.student._id.toString())
     );

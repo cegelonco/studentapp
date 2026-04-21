@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { authenticate } = require('../middleware/auth');
 const User = require('../models/User');
+const Roommate = require('../models/Roommate');
 
 // Get current user profile
 router.get('/me', authenticate, async (req, res) => {
@@ -33,6 +34,25 @@ router.put('/me', authenticate, async (req, res) => {
       { $set: updates },
       { new: true, runValidators: true }
     ).select('-password -emailVerificationCode');
+
+    // Keep the Roommate profile in sync with User fields so that the
+    // same-university discovery filter stays correct when a student
+    // updates their university / department / age / budget.
+    if (user && user.userType === 'student') {
+      const roommateUpdates = {};
+      if (updates.university !== undefined) roommateUpdates.university = updates.university;
+      if (updates.department !== undefined) roommateUpdates.department = updates.department;
+      if (updates.age !== undefined) roommateUpdates.age = updates.age;
+      if (updates.budget !== undefined) roommateUpdates.budget = updates.budget;
+
+      if (Object.keys(roommateUpdates).length > 0) {
+        await Roommate.findOneAndUpdate(
+          { student: req.user._id },
+          { $set: roommateUpdates },
+          { new: true }
+        );
+      }
+    }
 
     res.json({
       success: true,
