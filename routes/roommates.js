@@ -162,8 +162,20 @@ router.get('/potential', authenticate, isStudent, async (req, res) => {
       .filter(c => c.user != null && c.status !== 'rejected')
       .map(c => c.user.toString());
 
+    // Also exclude students who have a PENDING incoming request to this
+    // user — they live on the Requests tab, not Discover.
+    const incomingPending = await Roommate.find({
+      'connections.user': req.user._id,
+      'connections.status': 'pending'
+    }).select('student');
+    const incomingSenderIds = incomingPending
+      .filter(r => r.student != null)
+      .map(r => r.student.toString());
+
+    const excludeIds = new Set([...connectedIds, ...incomingSenderIds]);
+
     const filtered = potentialRoommates.filter(r =>
-      r.student != null && !connectedIds.includes(r.student._id.toString())
+      r.student != null && !excludeIds.has(r.student._id.toString())
     );
 
     res.json({
@@ -286,7 +298,7 @@ router.put('/connection/:connectionId', authenticate, isStudent, async (req, res
         receiverRoommate = new Roommate({ student: req.user._id, isLookingForRoommate: true });
       }
       const existingReverse = receiverRoommate.connections.find(
-        c => c.user.toString() === senderRoommate.student.toString()
+        c => c.user != null && c.user.toString() === senderRoommate.student.toString()
       );
       if (existingReverse) {
         existingReverse.status = 'accepted';
@@ -334,11 +346,11 @@ router.get('/requests', authenticate, isStudent, async (req, res) => {
     const incoming = await Roommate.find({
       'connections.user': req.user._id,
       'connections.status': 'pending'
-    }).populate('student', 'firstName lastName email university department age');
+    }).populate('student', 'firstName lastName email userType university department age');
 
     const requests = incoming.map(r => {
       const conn = r.connections.find(
-        c => c.user.toString() === req.user._id.toString() && c.status === 'pending'
+        c => c.user != null && c.user.toString() === req.user._id.toString() && c.status === 'pending'
       );
       return {
         connectionId: conn?._id,
@@ -346,7 +358,7 @@ router.get('/requests', authenticate, isStudent, async (req, res) => {
         status: conn?.status,
         createdAt: conn?.createdAt
       };
-    }).filter(r => r.connectionId);
+    }).filter(r => r.connectionId && r.fromStudent);
 
     res.json({
       success: true,
@@ -364,8 +376,7 @@ router.get('/requests', authenticate, isStudent, async (req, res) => {
 // Get connected roommates
 router.get('/connections', authenticate, isStudent, async (req, res) => {
   try {
-    const roommate = await Roommate.findOne({ student: req.user._id })
-      .populate('connections.user', 'firstName lastName email university department age budget');
+    const roommate = await Roommate.findOne({ student: req.user._id });
 
     if (!roommate) {
       return res.json({
@@ -374,11 +385,38 @@ router.get('/connections', authenticate, isStudent, async (req, res) => {
       });
     }
 
-    const acceptedConnections = roommate.connections.filter(c => c.status === 'accepted');
+    const acceptedConnections = roommate.connections.filter(
+      c => c.status === 'accepted' && c.user != null
+    );
+
+    if (acceptedConnections.length === 0) {
+      return res.json({ success: true, connections: [] });
+    }
+
+    // The client's ConnectionDto expects `user` to be a RoommateDto with a
+    // nested `student` field (UserDto). Fetch each connected user's Roommate
+    // profile and return that full shape so names/universities render.
+    const userIds = acceptedConnections.map(c => c.user);
+    const connectedRoommates = await Roommate.find({ student: { $in: userIds } })
+      .populate('student', 'firstName lastName email userType university department age');
+
+    const byStudentId = new Map(
+      connectedRoommates
+        .filter(r => r.student != null)
+        .map(r => [r.student._id.toString(), r])
+    );
+
+    const connections = acceptedConnections
+      .map(c => ({
+        user: byStudentId.get(c.user.toString()) || null,
+        status: c.status,
+        createdAt: c.createdAt
+      }))
+      .filter(c => c.user != null);
 
     res.json({
       success: true,
-      connections: acceptedConnections
+      connections
     });
   } catch (error) {
     res.status(500).json({
